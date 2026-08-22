@@ -5,6 +5,9 @@ on:
     - cron: '0 1 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   check-oil-price:
     runs-on: ubuntu-latest
@@ -28,3 +31,14 @@ jobs:
           DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
         run: |
           python oil_alert.py
+
+      - name: Save oil price history
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add oil_state.json
+
+          git diff --cached --quiet || git commit -m "Update oil price state"
+
+          git push
