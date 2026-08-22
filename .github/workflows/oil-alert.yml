@@ -42,8 +42,8 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add oil_state.json
+          git add oil_state.json oil_history.csv
 
-          git diff --cached --quiet || git commit -m "Update oil price state"
+          git diff --cached --quiet || git commit -m "Update oil price state and history"
 
           git push
