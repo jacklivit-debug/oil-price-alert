@@ -14,10 +14,9 @@ import requests
 # 基础配置
 # ============================================================
 
-# 山东 0# 柴油公开价格页面
 OIL_PRICE_URL = "https://www.xiaoxiongyouhao.com/fprice/"
 
-# 你的运输参数
+# 运输参数
 ROUTE_NAME = "青岛港 → 郓城"
 DISTANCE_KM = 509
 FUEL_CONSUMPTION = 35
@@ -31,7 +30,7 @@ DINGTALK_SECRET = os.environ.get("DINGTALK_SECRET")
 
 
 # ============================================================
-# 获取山东柴油价格
+# 获取山东0#柴油价格
 # ============================================================
 
 def get_shandong_diesel_price():
@@ -53,21 +52,17 @@ def get_shandong_diesel_price():
 
     html = response.text
 
-    # 页面中山东省附近的价格
     marker = "山东省"
 
     if marker not in html:
         raise Exception("没有找到山东省油价数据")
 
-    # 截取山东省附近内容
     start = html.find(marker)
+
     section = html[start:start + 1000]
 
-    # 从网页文本中寻找 0# 柴油价格
     import re
 
-    # 常见格式：
-    # 山东省 | 7.75 | 8.31 | 7.36
     pattern = r"山东省.*?(\d+\.\d+).*?(\d+\.\d+).*?(\d+\.\d+)"
 
     match = re.search(pattern, section, re.S)
@@ -89,6 +84,7 @@ def get_shandong_diesel_price():
 def load_state():
 
     if not os.path.exists(STATE_FILE):
+
         return {
             "last_price": None,
             "highest_price": None,
@@ -96,14 +92,17 @@ def load_state():
         }
 
     try:
+
         with open(
             STATE_FILE,
             "r",
             encoding="utf-8"
         ) as f:
+
             return json.load(f)
 
     except Exception:
+
         return {
             "last_price": None,
             "highest_price": None,
@@ -132,7 +131,7 @@ def save_state(state):
 
 
 # ============================================================
-# 计算运输油费
+# 计算油费
 # ============================================================
 
 def calculate_cost(diesel_price):
@@ -149,7 +148,7 @@ def calculate_cost(diesel_price):
 
 
 # ============================================================
-# 钉钉消息
+# 钉钉发送
 # ============================================================
 
 def send_dingtalk(message):
@@ -210,6 +209,7 @@ def send_dingtalk(message):
     result = response.json()
 
     if result.get("errcode", 0) != 0:
+
         raise Exception(
             f"钉钉发送失败：{result}"
         )
@@ -221,29 +221,40 @@ def send_dingtalk(message):
 
 def main():
 
-    today = datetime.now().strftime(
+    now = datetime.now()
+
+    today = now.strftime(
         "%Y-%m-%d %H:%M:%S"
     )
 
-    print("=" * 50)
+    print("=" * 60)
     print("油价自动监控系统")
-    print("=" * 50)
+    print("=" * 60)
     print("检查时间：", today)
 
-    # 获取最新油价
+    # --------------------------------------------------------
+    # 获取当前油价
+    # --------------------------------------------------------
+
     current_price = get_shandong_diesel_price()
 
     print(
         f"山东0#柴油：{current_price:.2f} 元/L"
     )
 
+    # --------------------------------------------------------
     # 读取历史
+    # --------------------------------------------------------
+
     state = load_state()
 
     last_price = state.get("last_price")
     highest_price = state.get("highest_price")
 
+    # --------------------------------------------------------
     # 第一次运行
+    # --------------------------------------------------------
+
     if last_price is None:
 
         highest_price = current_price
@@ -273,72 +284,138 @@ def main():
         send_dingtalk(message)
 
         print("首次运行完成")
+
         return
 
+    # --------------------------------------------------------
     # 计算价格变化
+    # --------------------------------------------------------
+
     change = current_price - last_price
 
-    # 更新最高价
+    # 更新历史最高价
     if current_price > highest_price:
+
         highest_price = current_price
 
-    # 更新状态
-    state["last_price"] = current_price
-    state["highest_price"] = highest_price
-    state["last_date"] = today
+    # --------------------------------------------------------
+    # 计算运输费用
+    # --------------------------------------------------------
 
-    save_state(state)
-
-    # 没有变化
-    if abs(change) < 0.001:
-
-        print("油价没有变化，不发送钉钉消息。")
-        return
-
-    # 运输成本
     fuel_liters, current_cost = calculate_cost(
         current_price
+    )
+
+    _, previous_cost = calculate_cost(
+        last_price
     )
 
     _, highest_cost = calculate_cost(
         highest_price
     )
 
-    cost_difference = (
-        current_cost - highest_cost
+    # 本次油价变化对应的单程油费变化
+    cost_change = current_cost - previous_cost
+
+    # --------------------------------------------------------
+    # 更新状态
+    # --------------------------------------------------------
+
+    state["last_price"] = current_price
+    state["highest_price"] = highest_price
+    state["last_date"] = today
+
+    save_state(state)
+
+    # --------------------------------------------------------
+    # 油价没有变化
+    # --------------------------------------------------------
+
+    if abs(change) < 0.001:
+
+        print(
+            "油价没有变化，不发送钉钉消息。"
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # 判断涨跌
+    # --------------------------------------------------------
+
+    if change > 0:
+
+        direction = "上涨"
+        emoji = "🔴"
+        cost_word = "增加"
+
+    else:
+
+        direction = "下跌"
+        emoji = "🟢"
+        cost_word = "减少"
+
+    # --------------------------------------------------------
+    # 历史最高价比较
+    # --------------------------------------------------------
+
+    saving_vs_highest = (
+        highest_cost - current_cost
     )
 
-    # 涨跌方向
-    if change > 0:
-        direction = "📈 上涨"
-        emoji = "🔴"
-    else:
-        direction = "📉 下跌"
-        emoji = "🟢"
+    # --------------------------------------------------------
+    # 发送提醒
+    # --------------------------------------------------------
 
     message = (
         f"{emoji} 油价发生变化\n\n"
+
         f"时间：{today}\n"
-        f"山东0#柴油：{current_price:.2f} 元/L\n"
-        f"上次价格：{last_price:.2f} 元/L\n"
-        f"本次变化：{direction} {abs(change):.2f} 元/L\n\n"
 
-        f"🚛 {ROUTE_NAME}\n"
-        f"📏 单程距离：{DISTANCE_KM} km\n"
-        f"⛽ 油耗：{FUEL_CONSUMPTION} L/100km\n"
-        f"🛢️ 单程用油：{fuel_liters:.2f} L\n"
-        f"💰 当前单程油费：{current_cost:.2f} 元\n\n"
+        f"山东0#柴油："
+        f"{current_price:.2f} 元/L\n"
 
-        f"📊 历史最高油价：{highest_price:.2f} 元/L\n"
-        f"💰 最高油价对应单程油费：{highest_cost:.2f} 元\n"
-        f"💵 当前相比最高油价："
-        f"{abs(cost_difference):.2f} 元"
-        f"{'更省' if cost_difference < 0 else '更贵'}"
+        f"上次价格："
+        f"{last_price:.2f} 元/L\n"
+
+        f"本次{direction}："
+        f"{abs(change):.2f} 元/L\n\n"
+
+        f"🚛 运输路线：{ROUTE_NAME}\n"
+
+        f"📏 单程距离："
+        f"{DISTANCE_KM} km\n"
+
+        f"⛽ 油耗："
+        f"{FUEL_CONSUMPTION} L/100km\n"
+
+        f"🛢️ 单程用油："
+        f"{fuel_liters:.2f} L\n\n"
+
+        f"💰 当前单程油费："
+        f"{current_cost:.2f} 元\n"
+
+        f"💰 上次单程油费："
+        f"{previous_cost:.2f} 元\n"
+
+        f"🚛 每个40尺柜单程油费"
+        f"{cost_word}："
+        f"{abs(cost_change):.2f} 元\n\n"
+
+        f"📊 历史最高油价："
+        f"{highest_price:.2f} 元/L\n"
+
+        f"💵 相比历史最高油价，"
+        f"当前每柜单程"
+        f"{'节省' if saving_vs_highest > 0 else '多花'}："
+        f"{abs(saving_vs_highest):.2f} 元"
     )
 
     send_dingtalk(message)
 
-    print("油价变化，已发送钉钉提醒。")
+    print(
+        "油价变化，已发送钉钉提醒。"
+    )
 
 
 if __name__ == "__main__":
