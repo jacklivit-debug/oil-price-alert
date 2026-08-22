@@ -37,7 +37,7 @@ jobs:
         run: |
           python oil_alert.py
 
-      - name: Save oil price history
+      - name: Save oil price state and history
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
