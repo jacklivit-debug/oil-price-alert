@@ -8,6 +8,10 @@ on:
     # 北京时间每天 09:00
     - cron: '0 1 * * *'
 
+    # 每月1号北京时间09:10
+    # UTC时间01:10
+    - cron: '10 1 1 * *'
+
   workflow_dispatch:
 
 permissions:
@@ -18,24 +22,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # ======================================================
+      # 获取代码
+      # ======================================================
+
       - name: Checkout
         uses: actions/checkout@v4
+
+      # ======================================================
+      # Python
+      # ======================================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      # ======================================================
+      # 安装依赖
+      # ======================================================
+
       - name: Install dependencies
         run: |
           pip install requests
 
+      # ======================================================
+      # 判断当前任务
+      # ======================================================
+
       - name: Run oil price alert
+        if: github.event.schedule != '10 1 1 * *'
         env:
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
           DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
         run: |
           python oil_alert.py
+
+      # ======================================================
+      # 每月自动报告
+      # ======================================================
+
+      - name: Run monthly report
+        if: github.event.schedule == '10 1 1 * *'
+        env:
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
+        run: |
+          python monthly_report.py
+
+      # ======================================================
+      # 保存油价状态和历史记录
+      # ======================================================
 
       - name: Save oil price state and history
         run: |
